@@ -18,6 +18,10 @@ const getEnv = (key: string, defaultValue: string) => {
 const supabaseUrl = getEnv('VITE_SUPABASE_URL', 'https://tu-proyecto.supabase.co');
 const supabaseAnonKey = getEnv('VITE_SUPABASE_KEY', 'tu-anon-key');
 
+export const isSupabaseConfigured = () => {
+    return supabaseUrl && supabaseAnonKey && supabaseUrl !== 'https://tu-proyecto.supabase.co';
+};
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // Tipos de Base de Datos para TypeScript
