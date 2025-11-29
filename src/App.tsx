@@ -400,4 +400,120 @@ const MobileBottomNav = ({ toggleSidebar }: { toggleSidebar: () => void }) => (
 
 const AuthPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
    const [reg, setReg] = useState(false); const [e, setE] = useState(''); const [p, setP] = useState(''); const [n, setN] = useState(''); const [l, setL] = useState(false); const [err, setErr] = useState('');
-   const handle = async (ev: React.FormEvent) => { ev.preventDefault(); setL(true);
+   const handle = async (ev: React.FormEvent) => { ev.preventDefault(); setL(true); setErr(''); try { 
+     // Modo Demo si no hay Supabase
+     if(!isSupabaseConfigured()) { setTimeout(()=>{onLogin({...INITIAL_USER,email:e||'demo@toga.co',name:n||'Usuario Demo'});setL(false)},1000); return; }
+     
+     if(reg) { const {data,error} = await supabase.auth.signUp({email:e,password:p,options:{data:{full_name:n}}}); if(error) throw error; if(data.user) { await supabase.from('profiles').insert([{id:data.user.id,email:e,full_name:n}]); onLogin({...INITIAL_USER,id:data.user.id,email:e,name:n}); } }
+     else { const {data,error} = await supabase.auth.signInWithPassword({email:e,password:p}); if(error) throw error; if(data.user) { const {data:pf} = await supabase.from('profiles').select('*').eq('id',data.user.id).single(); onLogin({...INITIAL_USER,id:data.user.id,email:e,name:pf?.full_name||'Usuario',tier:pf?.tier||'FREE',reputation:pf?.reputation||0}); } }
+   } catch(x:any){setErr(x.message)} finally{setL(false)} };
+   return (<div className="min-h-screen flex items-center justify-center bg-slate-100 dark:bg-slate-900 px-4"><div className="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-xl w-full max-w-md"><div className="flex justify-center mb-6"><div className="bg-indigo-100 dark:bg-indigo-900 p-3 rounded-full"><Scale className="w-8 h-8 text-indigo-600 dark:text-indigo-400"/></div></div><h2 className="text-2xl font-bold text-center mb-2 text-slate-900 dark:text-white">{reg?'Crear Cuenta':'Bienvenido'}</h2>{!isSupabaseConfigured()&&<div className="bg-amber-100 text-amber-800 p-2 rounded mb-4 text-xs text-center">Modo Demo Offline Activado</div>}{err&&<div className="bg-red-100 text-red-700 p-3 rounded mb-4 text-sm">{err}</div>}<form onSubmit={handle} className="space-y-4">{reg&&<input className="w-full px-4 py-2 border rounded-lg dark:bg-slate-700 dark:text-white dark:border-slate-600" placeholder="Nombre Completo" value={n} onChange={x=>setN(x.target.value)} required={reg}/>}<input className="w-full px-4 py-2 border rounded-lg dark:bg-slate-700 dark:text-white dark:border-slate-600" type="email" placeholder="Correo" value={e} onChange={x=>setE(x.target.value)} required/><input className="w-full px-4 py-2 border rounded-lg dark:bg-slate-700 dark:text-white dark:border-slate-600" type="password" placeholder="Contraseña" value={p} onChange={x=>setP(x.target.value)} required/><button disabled={l} className="w-full bg-indigo-600 text-white py-3 rounded-lg font-bold shadow-md hover:bg-indigo-700 flex justify-center">{l?<Loader2 className="animate-spin"/>:(reg?'Registrarse':'Iniciar Sesión')}</button></form><button onClick={()=>setReg(!reg)} className="mt-6 w-full text-center text-sm text-indigo-600 dark:text-indigo-400 font-medium hover:underline">{reg?'¿Ya tienes cuenta? Inicia Sesión':'¿No tienes cuenta? Regístrate'}</button></div></div>);
+};
+
+const AppContent = () => {
+  const [user, setUser] = useState<User | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showPricing, setShowPricing] = useState(false);
+  const [comparisonList, setComparisonList] = useState<JurisprudenceCase[]>([]);
+  const [toast, setToast] = useState<{msg: string, type: 'success'|'error'|'info'} | null>(null);
+  const [showTour, setShowTour] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notifications, setNotifications] = useState([{id:1,text:'Bienvenido a Toga',read:false}]);
+  
+  // Data
+  const [folders, setFolders] = useState<FolderType[]>(MOCK_FOLDERS);
+  const [documents, setDocuments] = useState<GeneratedDocument[]>(MOCK_DOCUMENTS);
+  const [db, setDb] = useState<JurisprudenceCase[]>(MOCK_DATABASE);
+  const [events, setEvents] = useState<AgendaEvent[]>(MOCK_EVENTS);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const init = async () => {
+        try {
+            if (!isSupabaseConfigured()) throw new Error("No config");
+            
+            const {data:{session}} = await supabase.auth.getSession();
+            if(session?.user) {
+                const {data:pf} = await supabase.from('profiles').select('*').eq('id',session.user.id).single();
+                setUser({id:session.user.id, email:session.user.email||'', name:pf?.full_name||'Usuario', tier:pf?.tier||'FREE', isActive:true, interests:pf?.interests||[], reputation:pf?.reputation||0});
+                
+                const [c, f, d, e] = await Promise.all([
+                    supabase.from('cases').select('*'),
+                    supabase.from('folders').select('*').eq('user_id',session.user.id),
+                    supabase.from('documents').select('*'),
+                    supabase.from('events').select('*').eq('user_id',session.user.id)
+                ]);
+                if(c.data) setDb([...MOCK_DATABASE, ...c.data as any]);
+                if(f.data) setFolders(f.data as any);
+                if(d.data) setDocuments(d.data as any);
+                if(e.data) setEvents(e.data as any);
+            }
+        } catch(e) { 
+            // Fallback for Demo
+        } finally { setLoading(false); }
+    };
+    init();
+  }, []);
+
+  useEffect(() => { if(user && !localStorage.getItem('tour_done')) setTimeout(()=>setShowTour(true),1500); }, [user]);
+
+  const showToast = (msg: string, type: 'success'|'error'|'info') => { setToast({msg, type}); setTimeout(()=>setToast(null),3000); };
+  const addToCompare = (c: JurisprudenceCase) => { if(comparisonList.length>=2) return showToast('Máximo 2 sentencias','error'); if(comparisonList.find(x=>x.id===c.id)) return; setComparisonList([...comparisonList,c]); showToast('Añadido al comparador','info'); };
+  const handleUpgrade = async () => { if(user){ const u = {...user, tier:'PREMIUM' as const}; setUser(u); if(isSupabaseConfigured()) await supabase.from('profiles').update({tier:'PREMIUM'}).eq('id',user.id); setShowPricing(false); showToast('¡Bienvenido a Premium!','success'); } };
+  
+  const handleContribute = async (c: JurisprudenceCase) => {
+      setDb([c, ...db]);
+      if(user && isSupabaseConfigured()) {
+          const nr = (user.reputation||0)+50;
+          setUser({...user, reputation: nr});
+          await Promise.all([supabase.from('cases').insert([{...c, user_id:user.id, analysis:c.analysis}]), supabase.from('profiles').update({reputation:nr}).eq('id',user.id)]);
+      }
+      setNotifications([{id:Date.now(), text:`Ganaste 50XP por aportar`, read:false}, ...notifications]);
+  };
+
+  if(loading) return <div className="h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900"><Loader2 className="w-10 h-10 animate-spin text-indigo-600"/></div>;
+  if(!user) return <Routes><Route path="/" element={<LandingPage onStart={()=>setUser({...INITIAL_USER, id:'temp'})}/>}/><Route path="/auth" element={<AuthPage onLogin={setUser}/>}/><Route path="*" element={<Navigate to="/"/>}/></Routes>;
+  if(user.id==='temp') return <AuthPage onLogin={setUser}/>;
+
+  return (
+    <div className="flex h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-sans overflow-hidden">
+      <Sidebar user={user} isOpen={sidebarOpen} toggle={()=>setSidebarOpen(!sidebarOpen)} onLogout={async()=>{if(isSupabaseConfigured())await supabase.auth.signOut(); setUser(null);}} unreadNotifications={notifications.filter(n=>!n.read).length} onHelp={()=>setShowHelp(true)}/>
+      <div className="flex-1 flex flex-col min-w-0 relative">
+        <header className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 p-4 flex justify-between items-center z-10">
+            <div className="md:hidden font-bold flex gap-2"><Scale className="text-indigo-600"/> Toga</div>
+            <div className="ml-auto relative">
+                <button onClick={()=>setShowNotifications(!showNotifications)} className="p-2 relative hover:text-indigo-600"><Bell className="w-6 h-6"/>{notifications.some(n=>!n.read)&&<span className="absolute top-1 right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white dark:border-slate-800"></span>}</button>
+                {showNotifications && <div className="absolute right-0 mt-2 w-72 bg-white dark:bg-slate-800 rounded-xl shadow-xl border dark:border-slate-700 z-50"><div className="p-3 font-bold border-b dark:border-slate-700">Notificaciones</div><div className="max-h-64 overflow-y-auto">{notifications.map(n=><div key={n.id} className="p-3 text-sm border-b dark:border-slate-700">{n.text}</div>)}</div></div>}
+            </div>
+        </header>
+        <main className="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8 relative">
+          <SubscriptionBanner user={user} onUpgrade={()=>setShowPricing(true)}/>
+          <Routes>
+            <Route path="/" element={<HomePage user={user} events={events}/>}/>
+            <Route path="/agenda" element={<AgendaPage events={events} onAddEvent={async(e:any)=>{setEvents([...events,e]);if(user.id && isSupabaseConfigured())await supabase.from('events').insert([{...e,user_id:user.id}]);showToast('Agendado','success')}} onToggleEvent={()=>{}} onDeleteEvent={async(id:string)=>{setEvents(events.filter(x=>x.id!==id));if(isSupabaseConfigured())await supabase.from('events').delete().eq('id',id)}}/>}/>
+            <Route path="/library" element={<LibraryPage folders={folders} documents={documents} onCreateFolder={async(n:string,c:string)=>{const f={id:`f-${Date.now()}`,name:n,color:c,createdAt:new Date().toISOString()};setFolders([...folders,f]);if(user.id && isSupabaseConfigured())await supabase.from('folders').insert([{...f,user_id:user.id}]);showToast('Creado','success')}}/>}/>
+            <Route path="/drafter" element={<DrafterPage folders={folders} saveDocument={async(d:any)=>{setDocuments([...documents,d]);if(user.id && isSupabaseConfigured())await supabase.from('documents').insert([{...d,user_id:user.id}]);showToast('Guardado','success')}} notify={showToast} user={user} onUpgrade={()=>setShowPricing(true)}/>}/>
+            <Route path="/tools" element={<ToolsPage onAddToAgenda={()=>{}}/>}/>
+            <Route path="/compare" element={<ComparePage comparisonList={comparisonList} onRemove={(id:string)=>setComparisonList(comparisonList.filter(c=>c.id!==id))} onClear={()=>setComparisonList([])} user={user} onUpgrade={()=>setShowPricing(true)}/>}/>
+            <Route path="/search" element={<SearchPage database={db} onAddCompare={addToCompare}/>}/>
+            <Route path="/prepare" element={<PrepareCasePage database={db} notify={showToast} user={user} onUpgrade={()=>setShowPricing(true)}/>}/>
+            <Route path="/community" element={<CommunityPage notify={showToast}/>}/>
+            <Route path="/contribute" element={<ContributePage onContribute={handleContribute} notify={showToast}/>}/>
+            <Route path="/profile" element={<ProfilePage user={user} onBackup={()=>downloadFile(JSON.stringify({user,db,folders,documents,events}),`backup-${Date.now()}.json`,'application/json')} notify={showToast} onUpdateInterests={async(i:any)=>{setUser({...user,interests:i});if(isSupabaseConfigured())await supabase.from('profiles').update({interests:i}).eq('id',user.id)}}/>}/>
+            <Route path="/case/:id" element={<CaseDetailPage folders={folders} saveToFolder={()=>{}} notify={showToast}/>}/>
+          </Routes>
+        </main>
+        <MobileBottomNav toggleSidebar={()=>setSidebarOpen(true)}/>
+        {comparisonList.length>0 && <div className="fixed bottom-24 md:bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-full shadow-2xl flex gap-4 z-40 items-center"><Link to="/compare" className="font-bold text-yellow-400 hover:underline">Comparar ({comparisonList.length})</Link><button onClick={()=>setComparisonList([])}><X className="w-4 h-4"/></button></div>}
+        {toast && <Toast message={toast.msg} type={toast.type} onClose={()=>setToast(null)}/>}
+        {showTour && <OnboardingTour onComplete={()=>{setShowTour(false);localStorage.setItem('tour_done','1')}}/>}
+        {showHelp && <HelpModal onClose={()=>setShowHelp(false)}/>}
+        {showPricing && <PricingModal onClose={()=>setShowPricing(false)} onUpgrade={handleUpgrade} userEmail={user.email} userName={user.name}/>}
+      </div>
+    </div>
+  );
+};
+
+const App = () => <Router><AppContent/></Router>;
+export default App;
