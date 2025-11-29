@@ -3,12 +3,12 @@ import { JurisprudenceCase, LegalArea, JurisprudenceAnalysis } from "../types";
 
 // Helper para obtener la API KEY de diferentes maneras posibles en Vite/Vercel
 const getApiKey = () => {
-  // @ts-ignore
-  if (typeof import.meta !== 'undefined' && import.meta.env) {
+  try {
     // @ts-ignore
     return import.meta.env.VITE_API_KEY || import.meta.env.API_KEY || '';
+  } catch (e) {
+    return '';
   }
-  return '';
 };
 
 const apiKey = getApiKey();
@@ -47,7 +47,6 @@ export const semanticSearch = async (query: string, database: JurisprudenceCase[
   }
 };
 
-// ... Otras funciones simplificadas para evitar errores ...
 export const generateCaseArgument = async (userCaseDescription: string, contextDocs: string, database: JurisprudenceCase[]) => "Argumento generado...";
 export const askDocument = async (question: string, documentText: string) => "Respuesta...";
 export const generateLegalDocument = async (type: string, details: string) => "Documento generado...";
