@@ -173,14 +173,30 @@ const OnboardingTour = ({ onComplete }: { onComplete: () => void }) => {
   const currentTour = steps[currentStep];
 
   useEffect(() => {
-    if (!currentTour || currentTour.position === 'center') { setStyles({}); return; }
+    if (!currentTour) { setStyles({}); return; }
+    
+    if (currentTour.position === 'center') {
+        setStyles({});
+        return;
+    }
+
     const element = document.getElementById(currentTour.targetId);
-    if (!element) { setStyles({ modal: { top: '50%', left: '50%', transform: 'translate(-50%, -50%)', position: 'fixed' } }); return; }
+    if (!element) { 
+        // Fallback
+        setStyles({ modal: { top: '50%', left: '50%', transform: 'translate(-50%, -50%)', position: 'fixed' } }); 
+        return; 
+    }
+
     const rect = element.getBoundingClientRect();
     let top = rect.top;
     let left = rect.right + 15;
+    
     if (left > window.innerWidth - 300) { left = rect.left - 315; }
-    setStyles({ modal: { top, left, position: 'absolute' }, highlight: { top: rect.top - 5, left: rect.left - 5, width: rect.width + 10, height: rect.height + 10, position: 'absolute' } });
+    
+    setStyles({ 
+        modal: { top, left, position: 'absolute' }, 
+        highlight: { top: rect.top - 5, left: rect.left - 5, width: rect.width + 10, height: rect.height + 10, position: 'absolute' } 
+    });
   }, [currentStep]);
 
   const handleNext = () => currentStep < steps.length - 1 ? setCurrentStep(currentStep + 1) : onComplete();
