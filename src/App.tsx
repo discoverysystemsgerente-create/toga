@@ -7,7 +7,7 @@ import {
   Bell, Settings, LogOut, Check, AlertCircle, Loader2, Download, Tag, Lock,
   ArrowRight, ShieldCheck, Zap, Globe, Headphones, PlayCircle, PauseCircle,
   MessageCircleQuestion, XCircle, Filter, Trophy, Calculator, Clipboard, Calendar,
-  FileEdit, Folder, FolderPlus, Briefcase, Plus, SplitSquareHorizontal, ArrowLeftRight, Trash2, Copy, Volume2, StopCircle, Moon, Sun, FileDown, Save, Clock, Mic, Mail, Type, AlignLeft, List, GitCommitVertical, HelpCircle, Maximize, Minimize, LifeBuoy, Shield
+  FileEdit, Folder, FolderPlus, Briefcase, Plus, SplitSquareHorizontal, ArrowLeftRight, Trash2, Copy, Volume2, StopCircle, Moon, Sun, FileDown, Save, Clock, Mic, Mail, AlignLeft, List, GitCommitVertical, HelpCircle, Maximize, Minimize, LifeBuoy, Shield
 } from 'lucide-react';
 import { User, JurisprudenceCase, LegalArea, SourceType, Post, SearchHistoryItem, Comment, Folder as FolderType, GeneratedDocument, DocumentType, AgendaEvent, EventType } from '../types';
 import { INITIAL_USER, MOCK_DATABASE, MOCK_POSTS, MOCK_HISTORY, MOCK_FOLDERS, MOCK_DOCUMENTS, MOCK_EVENTS } from '../constants';
@@ -17,7 +17,15 @@ import { PricingModal } from '../components/PricingModal';
 import { JurisprudenceCard } from '../components/JurisprudenceCard';
 import { supabase, isSupabaseConfigured } from '../services/supabase';
 
-// Helper for Safe LocalStorage
+declare global {
+  interface Window {
+    pdfjsLib: any;
+    deferredPrompt: any;
+    webkitSpeechRecognition: any;
+  }
+}
+
+// --- Helper for Safe LocalStorage ---
 const safeParse = <T,>(key: string, fallback: T): T => {
   try {
     const item = localStorage.getItem(key);
@@ -51,7 +59,7 @@ const Toast = ({ message, type, onClose }: { message: string, type: 'success' | 
   };
 
   return (
-    <div className={`fixed bottom-20 md:bottom-6 right-6 ${bgColors[type]} text-white px-6 py-3 rounded-lg shadow-xl flex items-center z-[60]`}>
+    <div className={`fixed bottom-20 md:bottom-6 right-6 ${bgColors[type]} text-white px-6 py-3 rounded-lg shadow-xl flex items-center z-[60] animate-fade-in`}>
       {type === 'success' && <CheckCircle className="w-5 h-5 mr-3" />}
       {type === 'error' && <AlertCircle className="w-5 h-5 mr-3" />}
       {type === 'info' && <Zap className="w-5 h-5 mr-3" />}
@@ -63,7 +71,7 @@ const Toast = ({ message, type, onClose }: { message: string, type: 'success' | 
   );
 };
 
-const VoiceInput = ({ onResult }: { onResult: (text: string) => void }) => {
+const VoiceInput = ({ onResult, className = "" }: { onResult: (text: string) => void, className?: string }) => {
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef<any>(null);
 
@@ -90,7 +98,10 @@ const VoiceInput = ({ onResult }: { onResult: (text: string) => void }) => {
 
       recognition.onstart = () => setListening(true);
       recognition.onend = () => setListening(false);
-      recognition.onerror = () => setListening(false);
+      recognition.onerror = (event: any) => {
+        console.error("Speech recognition error", event.error);
+        setListening(false);
+      };
 
       recognition.onresult = (event: any) => {
         if (event.results && event.results[0] && event.results[0][0]) {
@@ -101,6 +112,7 @@ const VoiceInput = ({ onResult }: { onResult: (text: string) => void }) => {
 
       recognition.start();
     } catch (e) {
+      console.error("Error starting speech recognition", e);
       setListening(false);
     }
   };
@@ -109,7 +121,7 @@ const VoiceInput = ({ onResult }: { onResult: (text: string) => void }) => {
     <button 
       type="button"
       onClick={startListening} 
-      className={`p-2 rounded-full transition-all ${listening ? 'bg-red-100 text-red-600 animate-pulse ring-2 ring-red-400' : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-100'}`}
+      className={`p-2 rounded-full transition-all ${listening ? 'bg-red-100 text-red-600 animate-pulse ring-2 ring-red-400' : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-100'} ${className}`}
       title="Dictar por voz"
     >
       <Mic className="w-5 h-5" />
@@ -121,7 +133,7 @@ const PremiumGuard = ({ user, children, onUpgrade }: { user: User, children?: Re
   if (user.tier === 'PREMIUM') return <>{children}</>;
   return (
     <div className="relative rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-slate-50 dark:bg-slate-800">
-       <div className="filter blur-sm opacity-30 pointer-events-none select-none p-4">
+       <div className="filter blur-sm opacity-30 pointer-events-none select-none p-4" aria-hidden="true">
           {children || <div className="h-64 bg-slate-200 dark:bg-slate-700 rounded-lg mt-4 w-full"></div>}
        </div>
        <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/60 dark:bg-slate-900/60 z-10 p-6 text-center backdrop-blur-sm">
@@ -153,20 +165,34 @@ const HelpModal = ({ onClose }: { onClose: () => void }) => (
 
 const OnboardingTour = ({ onComplete }: { onComplete: () => void }) => {
   const [currentStep, setCurrentStep] = useState(0);
+  const [styles, setStyles] = useState<any>({});
   const steps = [
-    { targetId: 'nav-home', title: 'Bienvenido', content: 'Tu asistente jurídico inteligente.' },
-    { targetId: 'nav-search', title: 'Búsqueda', content: 'Encuentra jurisprudencia con IA.' },
-    { targetId: 'nav-drafter', title: 'Redactor', content: 'Genera documentos automáticamente.' },
-    { targetId: 'nav-agenda', title: 'Agenda', content: 'Gestiona tus audiencias.' }
+    { targetId: 'nav-home', title: 'Bienvenido', content: 'Tu asistente jurídico inteligente.', position: 'center' },
+    { targetId: 'nav-search', title: 'Búsqueda', content: 'Encuentra jurisprudencia con IA.', position: 'right' },
+    { targetId: 'nav-drafter', title: 'Redactor', content: 'Genera documentos automáticamente.', position: 'right' },
+    { targetId: 'nav-agenda', title: 'Agenda', content: 'Gestiona tus audiencias.', position: 'right' }
   ];
   const currentTour = steps[currentStep];
 
+  useEffect(() => {
+    if (!currentTour || currentTour.position === 'center') { setStyles({}); return; }
+    const element = document.getElementById(currentTour.targetId);
+    if (!element) { setStyles({ modal: { top: '50%', left: '50%', transform: 'translate(-50%, -50%)', position: 'fixed' } }); return; }
+    const rect = element.getBoundingClientRect();
+    let top = rect.top;
+    let left = rect.right + 15;
+    if (left > window.innerWidth - 300) { left = rect.left - 315; }
+    setStyles({ modal: { top, left, position: 'absolute' }, highlight: { top: rect.top - 5, left: rect.left - 5, width: rect.width + 10, height: rect.height + 10, position: 'absolute' } });
+  }, [currentStep]);
+
   const handleNext = () => currentStep < steps.length - 1 ? setCurrentStep(currentStep + 1) : onComplete();
+  if (!currentTour) return null;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center">
       <div className="absolute inset-0 bg-slate-900/70"></div>
-      <div className="relative bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-2xl max-w-sm w-full mx-4 z-[101] animate-fade-in">
+      {styles.highlight && <div className="absolute border-2 border-yellow-400 rounded-lg pointer-events-none transition-all duration-300" style={styles.highlight}></div>}
+      <div className="relative bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-2xl max-w-sm w-full mx-4 z-[101] animate-fade-in" style={styles.modal || {}}>
         <h3 className="text-xl font-bold mb-2 text-slate-900 dark:text-white">{currentTour.title}</h3>
         <p className="text-slate-600 dark:text-slate-300 mb-6">{currentTour.content}</p>
         <button onClick={handleNext} className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-bold w-full hover:bg-indigo-700">
@@ -179,12 +205,27 @@ const OnboardingTour = ({ onComplete }: { onComplete: () => void }) => {
 
 const Sidebar = ({ user, isOpen, toggle, onLogout, unreadNotifications, onHelp }: { user: User, isOpen: boolean, toggle: () => void, onLogout: () => void, unreadNotifications: number, onHelp: () => void }) => {
   const location = useLocation();
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
+
+  useEffect(() => {
+    const handler = (e: any) => { e.preventDefault(); setInstallPrompt(e); };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstall = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === 'accepted') setInstallPrompt(null);
+  };
+
   const isActive = (path: string) => location.pathname === path ? 'bg-indigo-800 text-white shadow-lg' : 'text-indigo-100 hover:bg-indigo-800/50';
 
   const menuItems = [
     { path: '/', icon: LayoutDashboard, label: 'Inicio', id: 'nav-home' },
     { path: '/agenda', icon: Calendar, label: 'Agenda Judicial', id: 'nav-agenda' },
-    { path: '/search', icon: Search, label: 'Búsqueda', id: 'nav-search' },
+    { path: '/search', icon: Search, label: 'Búsqueda & Historial', id: 'nav-search' },
     { path: '/library', icon: Briefcase, label: 'Biblioteca', id: 'nav-library' },
     { path: '/compare', icon: SplitSquareHorizontal, label: 'Comparador', id: 'nav-compare' },
     { path: '/drafter', icon: FileEdit, label: 'Redactor IA', id: 'nav-drafter' },
@@ -225,6 +266,11 @@ const Sidebar = ({ user, isOpen, toggle, onLogout, unreadNotifications, onHelp }
         </div>
         <div className="p-4 border-t border-slate-800 space-y-2">
            <button onClick={onHelp} className="flex items-center w-full px-4 py-2 hover:bg-slate-800 rounded-xl text-sm text-slate-300"><LifeBuoy className="w-4 h-4 mr-3"/> Ayuda</button>
+           {installPrompt && (
+             <button onClick={handleInstall} className="flex items-center justify-center w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold mb-2">
+               <Download className="w-4 h-4 mr-2" /> Instalar App
+             </button>
+           )}
            <button onClick={onLogout} className="flex items-center w-full px-4 py-2 hover:bg-slate-800 rounded-xl text-sm text-red-400"><LogOut className="w-4 h-4 mr-3"/> Salir</button>
         </div>
       </aside>
@@ -354,120 +400,4 @@ const MobileBottomNav = ({ toggleSidebar }: { toggleSidebar: () => void }) => (
 
 const AuthPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
    const [reg, setReg] = useState(false); const [e, setE] = useState(''); const [p, setP] = useState(''); const [n, setN] = useState(''); const [l, setL] = useState(false); const [err, setErr] = useState('');
-   const handle = async (ev: React.FormEvent) => { ev.preventDefault(); setL(true); setErr(''); try { 
-     // Modo Demo si no hay Supabase
-     if(!isSupabaseConfigured()) { setTimeout(()=>{onLogin({...INITIAL_USER,email:e||'demo@toga.co',name:n||'Usuario Demo'});setL(false)},1000); return; }
-     
-     if(reg) { const {data,error} = await supabase.auth.signUp({email:e,password:p,options:{data:{full_name:n}}}); if(error) throw error; if(data.user) { await supabase.from('profiles').insert([{id:data.user.id,email:e,full_name:n}]); onLogin({...INITIAL_USER,id:data.user.id,email:e,name:n}); } }
-     else { const {data,error} = await supabase.auth.signInWithPassword({email:e,password:p}); if(error) throw error; if(data.user) { const {data:pf} = await supabase.from('profiles').select('*').eq('id',data.user.id).single(); onLogin({...INITIAL_USER,id:data.user.id,email:e,name:pf?.full_name||'Usuario',tier:pf?.tier||'FREE',reputation:pf?.reputation||0}); } }
-   } catch(x:any){setErr(x.message)} finally{setL(false)} };
-   return (<div className="min-h-screen flex items-center justify-center bg-slate-100 dark:bg-slate-900 px-4"><div className="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-xl w-full max-w-md"><div className="flex justify-center mb-6"><div className="bg-indigo-100 dark:bg-indigo-900 p-3 rounded-full"><Scale className="w-8 h-8 text-indigo-600 dark:text-indigo-400"/></div></div><h2 className="text-2xl font-bold text-center mb-2 text-slate-900 dark:text-white">{reg?'Crear Cuenta':'Bienvenido'}</h2>{!isSupabaseConfigured()&&<div className="bg-amber-100 text-amber-800 p-2 rounded mb-4 text-xs text-center">Modo Demo Offline Activado</div>}{err&&<div className="bg-red-100 text-red-700 p-3 rounded mb-4 text-sm">{err}</div>}<form onSubmit={handle} className="space-y-4">{reg&&<input className="w-full px-4 py-2 border rounded-lg dark:bg-slate-700 dark:text-white dark:border-slate-600" placeholder="Nombre Completo" value={n} onChange={x=>setN(x.target.value)} required={reg}/>}<input className="w-full px-4 py-2 border rounded-lg dark:bg-slate-700 dark:text-white dark:border-slate-600" type="email" placeholder="Correo" value={e} onChange={x=>setE(x.target.value)} required/><input className="w-full px-4 py-2 border rounded-lg dark:bg-slate-700 dark:text-white dark:border-slate-600" type="password" placeholder="Contraseña" value={p} onChange={x=>setP(x.target.value)} required/><button disabled={l} className="w-full bg-indigo-600 text-white py-3 rounded-lg font-bold shadow-md hover:bg-indigo-700 flex justify-center">{l?<Loader2 className="animate-spin"/>:(reg?'Registrarse':'Iniciar Sesión')}</button></form><button onClick={()=>setReg(!reg)} className="mt-6 w-full text-center text-sm text-indigo-600 dark:text-indigo-400 font-medium hover:underline">{reg?'¿Ya tienes cuenta? Inicia Sesión':'¿No tienes cuenta? Regístrate'}</button></div></div>);
-};
-
-const AppContent = () => {
-  const [user, setUser] = useState<User | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [showPricing, setShowPricing] = useState(false);
-  const [comparisonList, setComparisonList] = useState<JurisprudenceCase[]>([]);
-  const [toast, setToast] = useState<{msg: string, type: 'success'|'error'|'info'} | null>(null);
-  const [showTour, setShowTour] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [notifications, setNotifications] = useState([{id:1,text:'Bienvenido a Toga',read:false}]);
-  
-  // Data
-  const [folders, setFolders] = useState<FolderType[]>(MOCK_FOLDERS);
-  const [documents, setDocuments] = useState<GeneratedDocument[]>(MOCK_DOCUMENTS);
-  const [db, setDb] = useState<JurisprudenceCase[]>(MOCK_DATABASE);
-  const [events, setEvents] = useState<AgendaEvent[]>(MOCK_EVENTS);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const init = async () => {
-        try {
-            if (!isSupabaseConfigured()) throw new Error("No config");
-            
-            const {data:{session}} = await supabase.auth.getSession();
-            if(session?.user) {
-                const {data:pf} = await supabase.from('profiles').select('*').eq('id',session.user.id).single();
-                setUser({id:session.user.id, email:session.user.email||'', name:pf?.full_name||'Usuario', tier:pf?.tier||'FREE', isActive:true, interests:pf?.interests||[], reputation:pf?.reputation||0});
-                
-                const [c, f, d, e] = await Promise.all([
-                    supabase.from('cases').select('*'),
-                    supabase.from('folders').select('*').eq('user_id',session.user.id),
-                    supabase.from('documents').select('*'),
-                    supabase.from('events').select('*').eq('user_id',session.user.id)
-                ]);
-                if(c.data) setDb([...MOCK_DATABASE, ...c.data as any]);
-                if(f.data) setFolders(f.data as any);
-                if(d.data) setDocuments(d.data as any);
-                if(e.data) setEvents(e.data as any);
-            }
-        } catch(e) { 
-            // Fallback for Demo
-        } finally { setLoading(false); }
-    };
-    init();
-  }, []);
-
-  useEffect(() => { if(user && !localStorage.getItem('tour_done')) setTimeout(()=>setShowTour(true),1500); }, [user]);
-
-  const showToast = (msg: string, type: 'success'|'error'|'info') => { setToast({msg, type}); setTimeout(()=>setToast(null),3000); };
-  const addToCompare = (c: JurisprudenceCase) => { if(comparisonList.length>=2) return showToast('Máximo 2 sentencias','error'); if(comparisonList.find(x=>x.id===c.id)) return; setComparisonList([...comparisonList,c]); showToast('Añadido al comparador','info'); };
-  const handleUpgrade = async () => { if(user){ const u = {...user, tier:'PREMIUM' as const}; setUser(u); if(isSupabaseConfigured()) await supabase.from('profiles').update({tier:'PREMIUM'}).eq('id',user.id); setShowPricing(false); showToast('¡Bienvenido a Premium!','success'); } };
-  
-  const handleContribute = async (c: JurisprudenceCase) => {
-      setDb([c, ...db]);
-      if(user && isSupabaseConfigured()) {
-          const nr = (user.reputation||0)+50;
-          setUser({...user, reputation: nr});
-          await Promise.all([supabase.from('cases').insert([{...c, user_id:user.id, analysis:c.analysis}]), supabase.from('profiles').update({reputation:nr}).eq('id',user.id)]);
-      }
-      setNotifications([{id:Date.now(), text:`Ganaste 50XP por aportar`, read:false}, ...notifications]);
-  };
-
-  if(loading) return <div className="h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900"><Loader2 className="w-10 h-10 animate-spin text-indigo-600"/></div>;
-  if(!user) return <Routes><Route path="/" element={<LandingPage onStart={()=>setUser({...INITIAL_USER, id:'temp'})}/>}/><Route path="/auth" element={<AuthPage onLogin={setUser}/>}/><Route path="*" element={<Navigate to="/"/>}/></Routes>;
-  if(user.id==='temp') return <AuthPage onLogin={setUser}/>;
-
-  return (
-    <div className="flex h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-sans overflow-hidden">
-      <Sidebar user={user} isOpen={sidebarOpen} toggle={()=>setSidebarOpen(!sidebarOpen)} onLogout={async()=>{if(isSupabaseConfigured())await supabase.auth.signOut(); setUser(null);}} unreadNotifications={notifications.filter(n=>!n.read).length} onHelp={()=>setShowHelp(true)}/>
-      <div className="flex-1 flex flex-col min-w-0 relative">
-        <header className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 p-4 flex justify-between items-center z-10">
-            <div className="md:hidden font-bold flex gap-2"><Scale className="text-indigo-600"/> Toga</div>
-            <div className="ml-auto relative">
-                <button onClick={()=>setShowNotifications(!showNotifications)} className="p-2 relative hover:text-indigo-600"><Bell className="w-6 h-6"/>{notifications.some(n=>!n.read)&&<span className="absolute top-1 right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white dark:border-slate-800"></span>}</button>
-                {showNotifications && <div className="absolute right-0 mt-2 w-72 bg-white dark:bg-slate-800 rounded-xl shadow-xl border dark:border-slate-700 z-50"><div className="p-3 font-bold border-b dark:border-slate-700">Notificaciones</div><div className="max-h-64 overflow-y-auto">{notifications.map(n=><div key={n.id} className="p-3 text-sm border-b dark:border-slate-700">{n.text}</div>)}</div></div>}
-            </div>
-        </header>
-        <main className="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8 relative">
-          <SubscriptionBanner user={user} onUpgrade={()=>setShowPricing(true)}/>
-          <Routes>
-            <Route path="/" element={<HomePage user={user} events={events}/>}/>
-            <Route path="/agenda" element={<AgendaPage events={events} onAddEvent={async(e:any)=>{setEvents([...events,e]);if(user.id && isSupabaseConfigured())await supabase.from('events').insert([{...e,user_id:user.id}]);showToast('Agendado','success')}} onToggleEvent={()=>{}} onDeleteEvent={async(id:string)=>{setEvents(events.filter(x=>x.id!==id));if(isSupabaseConfigured())await supabase.from('events').delete().eq('id',id)}}/>}/>
-            <Route path="/library" element={<LibraryPage folders={folders} documents={documents} onCreateFolder={async(n:string,c:string)=>{const f={id:`f-${Date.now()}`,name:n,color:c,createdAt:new Date().toISOString()};setFolders([...folders,f]);if(user.id && isSupabaseConfigured())await supabase.from('folders').insert([{...f,user_id:user.id}]);showToast('Creado','success')}}/>}/>
-            <Route path="/drafter" element={<DrafterPage folders={folders} saveDocument={async(d:any)=>{setDocuments([...documents,d]);if(user.id && isSupabaseConfigured())await supabase.from('documents').insert([{...d,user_id:user.id}]);showToast('Guardado','success')}} notify={showToast} user={user} onUpgrade={()=>setShowPricing(true)}/>}/>
-            <Route path="/tools" element={<ToolsPage onAddToAgenda={()=>{}}/>}/>
-            <Route path="/compare" element={<ComparePage comparisonList={comparisonList} onRemove={(id:string)=>setComparisonList(comparisonList.filter(c=>c.id!==id))} onClear={()=>setComparisonList([])} user={user} onUpgrade={()=>setShowPricing(true)}/>}/>
-            <Route path="/search" element={<SearchPage database={db} onAddCompare={addToCompare}/>}/>
-            <Route path="/prepare" element={<PrepareCasePage database={db} notify={showToast} user={user} onUpgrade={()=>setShowPricing(true)}/>}/>
-            <Route path="/community" element={<CommunityPage notify={showToast}/>}/>
-            <Route path="/contribute" element={<ContributePage onContribute={handleContribute} notify={showToast}/>}/>
-            <Route path="/profile" element={<ProfilePage user={user} onBackup={()=>downloadFile(JSON.stringify({user,db,folders,documents,events}),`backup-${Date.now()}.json`,'application/json')} notify={showToast} onUpdateInterests={async(i:any)=>{setUser({...user,interests:i});if(isSupabaseConfigured())await supabase.from('profiles').update({interests:i}).eq('id',user.id)}}/>}/>
-            <Route path="/case/:id" element={<CaseDetailPage folders={folders} saveToFolder={()=>{}} notify={showToast}/>}/>
-          </Routes>
-        </main>
-        <MobileBottomNav toggleSidebar={()=>setSidebarOpen(true)}/>
-        {comparisonList.length>0 && <div className="fixed bottom-24 md:bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-full shadow-2xl flex gap-4 z-40 items-center"><Link to="/compare" className="font-bold text-yellow-400 hover:underline">Comparar ({comparisonList.length})</Link><button onClick={()=>setComparisonList([])}><X className="w-4 h-4"/></button></div>}
-        {toast && <Toast message={toast.msg} type={toast.type} onClose={()=>setToast(null)}/>}
-        {showTour && <OnboardingTour onComplete={()=>{setShowTour(false);localStorage.setItem('tour_done','1')}}/>}
-        {showHelp && <HelpModal onClose={()=>setShowHelp(false)}/>}
-        {showPricing && <PricingModal onClose={()=>setShowPricing(false)} onUpgrade={handleUpgrade} userEmail={user.email} userName={user.name}/>}
-      </div>
-    </div>
-  );
-};
-
-const App = () => <Router><AppContent/></Router>;
-export default App;
+   const handle = async (ev: React.FormEvent) => { ev.preventDefault(); setL(true);
